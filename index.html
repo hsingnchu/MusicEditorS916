@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音樂編輯器</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; padding: 20px; }
+  h1 { text-align: center; color: #e94560; margin-bottom: 10px; font-size: 2rem; }
+  .subtitle { text-align: center; color: #888; margin-bottom: 30px; }
+
+  /* Dep banner */
+  #dep-banner { background: #e94560; color: #fff; padding: 15px 20px; border-radius: 10px; margin-bottom: 25px; display: none; }
+  #dep-banner h3 { margin-bottom: 10px; }
+  .dep-item { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
+  .dep-item .status { font-weight: bold; }
+  .dep-item .status.ok { color: #a0ffa0; }
+  .dep-item .status.missing { color: #ffddaa; }
+  .dep-item button { background: #fff; color: #e94560; border: none; padding: 4px 14px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+  .dep-item button:disabled { opacity: .5; cursor: default; }
+
+  /* Sections */
+  .section { background: #16213e; border-radius: 12px; padding: 25px; margin-bottom: 25px; border: 1px solid #0f3460; }
+  .section h2 { color: #e94560; margin-bottom: 15px; font-size: 1.3rem; border-bottom: 2px solid #0f3460; padding-bottom: 8px; }
+  .section label { display: block; margin-bottom: 5px; color: #aaa; font-size: .9rem; }
+  .section input[type="text"], .section input[type="file"] { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #0f3460; background: #1a1a2e; color: #e0e0e0; margin-bottom: 12px; font-size: 1rem; }
+  .section input[type="text"]:focus { outline: none; border-color: #e94560; }
+  .btn { background: #e94560; color: #fff; border: none; padding: 10px 28px; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: bold; transition: background .2s; }
+  .btn:hover { background: #c73650; }
+  .btn:disabled { background: #555; cursor: default; }
+
+  /* Drop zone */
+  .dropzone { border: 2px dashed #0f3460; border-radius: 10px; padding: 30px; text-align: center; color: #666; margin-bottom: 12px; transition: border-color .2s, background .2s; cursor: pointer; }
+  .dropzone.hover { border-color: #e94560; background: rgba(233,69,96,.08); }
+  .dropzone.has-files { border-color: #4ecca3; color: #4ecca3; }
+
+  /* Result */
+  .result { margin-top: 15px; padding: 12px; background: #0f3460; border-radius: 8px; display: none; }
+  .result a { color: #4ecca3; text-decoration: none; font-weight: bold; }
+  .result audio { width: 100%; margin-top: 8px; }
+  .error { color: #ff6b6b; }
+  .spinner { display: inline-block; width: 18px; height: 18px; border: 3px solid #e94560; border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; margin-right: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Concat file list */
+  .file-list { list-style: none; margin-bottom: 12px; }
+  .file-list li { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #1a1a2e; border-radius: 6px; margin-bottom: 4px; }
+  .file-list li .fname { flex: 1; }
+  .file-list li button { background: none; border: none; color: #e94560; cursor: pointer; font-size: 1.1rem; }
+  .file-list li .move-btn { color: #888; }
+
+  /* Time inputs row */
+  .time-row { display: flex; gap: 15px; }
+  .time-row > div { flex: 1; }
+</style>
+</head>
+<body>
+
+<h1>音樂編輯器</h1>
+<p class="subtitle">音樂轉檔 / 剪接 / 拼接工具</p>
+
+<!-- Dependency Banner -->
+<div id="dep-banner">
+  <h3>環境檢查</h3>
+  <div id="dep-list"></div>
+</div>
+
+<!-- Section 1: Extract -->
+<div class="section">
+  <h2>1. 網頁音樂轉檔</h2>
+  <label>輸入網址（YouTube 等）</label>
+  <input type="text" id="extract-url" placeholder="https://www.youtube.com/watch?v=...">
+  <button class="btn" id="extract-btn" onclick="doExtract()">擷取 MP3</button>
+  <div class="result" id="extract-result"></div>
+</div>
+
+<!-- Section 2: Trim -->
+<div class="section">
+  <h2>2. 音樂剪接</h2>
+  <div class="dropzone" id="trim-drop" onclick="document.getElementById('trim-file').click()">
+    拖曳音樂檔案到此處，或點擊選擇檔案
+  </div>
+  <input type="file" id="trim-file" accept="audio/*" style="display:none" onchange="trimFileSelected(this)">
+  <div class="time-row">
+    <div>
+      <label>開始時間（例如 0:30 或 1:02:30）</label>
+      <input type="text" id="trim-start" placeholder="0:00">
+    </div>
+    <div>
+      <label>結束時間（例如 1:30:00，留空表示到結尾）</label>
+      <input type="text" id="trim-end" placeholder="">
+    </div>
+  </div>
+  <button class="btn" id="trim-btn" onclick="doTrim()">剪接</button>
+  <div class="result" id="trim-result"></div>
+</div>
+
+<!-- Section 3: Concat -->
+<div class="section">
+  <h2>3. 音樂拼接</h2>
+  <div class="dropzone" id="concat-drop" onclick="document.getElementById('concat-files').click()">
+    拖曳多個音樂檔案到此處，或點擊選擇檔案
+  </div>
+  <input type="file" id="concat-files" accept="audio/*" multiple style="display:none" onchange="concatFilesSelected(this)">
+  <ul class="file-list" id="concat-list"></ul>
+  <button class="btn" id="concat-btn" onclick="doConcat()">合併</button>
+  <div class="result" id="concat-result"></div>
+</div>
+
+<script>
+// ==================== 環境檢查 ====================
+async function checkDeps() {
+  try {
+    const r = await fetch('/api/check-deps');
+    const deps = await r.json();
+    let allOk = true;
+    let html = '';
+    for (const [name, ok] of Object.entries(deps)) {
+      if (!ok) allOk = false;
+      html += `<div class="dep-item">
+        <span>${name}</span>
+        <span class="status ${ok ? 'ok' : 'missing'}">${ok ? '已安裝' : '未安裝'}</span>
+        ${ok ? '' : `<button onclick="installDep('${name}', this)">安裝</button>`}
+      </div>`;
+    }
+    const banner = document.getElementById('dep-banner');
+    document.getElementById('dep-list').innerHTML = html;
+    banner.style.display = allOk ? 'none' : 'block';
+  } catch (e) {
+    console.error('環境檢查失敗', e);
+  }
+}
+
+async function installDep(name, btn) {
+  btn.disabled = true;
+  btn.textContent = '安裝中...';
+  try {
+    const r = await fetch('/api/install-dep', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    const data = await r.json();
+    if (data.ok) {
+      btn.textContent = '完成！';
+      setTimeout(checkDeps, 1000);
+    } else {
+      btn.textContent = '失敗';
+      alert('安裝失敗：' + data.error);
+    }
+  } catch (e) {
+    btn.textContent = '錯誤';
+    alert('安裝錯誤：' + e.message);
+  }
+}
+
+checkDeps();
+
+// ==================== 1. 網頁音樂轉檔 ====================
+async function doExtract() {
+  const url = document.getElementById('extract-url').value.trim();
+  if (!url) return alert('請輸入網址');
+  const btn = document.getElementById('extract-btn');
+  const res = document.getElementById('extract-result');
+  btn.disabled = true;
+  res.style.display = 'block';
+  res.innerHTML = '<span class="spinner"></span> 擷取中，請稍候...';
+  try {
+    const r = await fetch('/api/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await r.json();
+    if (data.ok) {
+      res.innerHTML = `完成！ <a href="/api/download/${data.file}" download>下載 ${data.file}</a>
+        <audio controls src="/api/download/${data.file}"></audio>`;
+    } else {
+      res.innerHTML = `<span class="error">錯誤：${data.error}</span>`;
+    }
+  } catch (e) {
+    res.innerHTML = `<span class="error">錯誤：${e.message}</span>`;
+  }
+  btn.disabled = false;
+}
+
+// ==================== 2. 音樂剪接 ====================
+let trimFile = null;
+
+function setupDropzone(zoneId, onDrop) {
+  const zone = document.getElementById(zoneId);
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('hover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('hover'));
+  zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('hover'); onDrop(e.dataTransfer.files); });
+}
+
+setupDropzone('trim-drop', files => {
+  if (files.length > 0) { trimFile = files[0]; updateTrimDrop(); }
+});
+
+function trimFileSelected(input) {
+  if (input.files.length > 0) { trimFile = input.files[0]; updateTrimDrop(); }
+}
+
+function updateTrimDrop() {
+  const zone = document.getElementById('trim-drop');
+  zone.classList.add('has-files');
+  zone.textContent = trimFile.name;
+}
+
+async function doTrim() {
+  if (!trimFile) return alert('請選擇檔案');
+  const btn = document.getElementById('trim-btn');
+  const res = document.getElementById('trim-result');
+  btn.disabled = true;
+  res.style.display = 'block';
+  res.innerHTML = '<span class="spinner"></span> 剪接中...';
+  const fd = new FormData();
+  fd.append('file', trimFile);
+  fd.append('start', document.getElementById('trim-start').value);
+  fd.append('end', document.getElementById('trim-end').value);
+  try {
+    const r = await fetch('/api/trim', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (data.ok) {
+      res.innerHTML = `完成！ <a href="/api/download/${data.file}" download>下載 ${data.file}</a>
+        <audio controls src="/api/download/${data.file}"></audio>`;
+    } else {
+      res.innerHTML = `<span class="error">錯誤：${data.error}</span>`;
+    }
+  } catch (e) {
+    res.innerHTML = `<span class="error">錯誤：${e.message}</span>`;
+  }
+  btn.disabled = false;
+}
+
+// ==================== 3. 音樂拼接 ====================
+let concatFiles = [];
+
+setupDropzone('concat-drop', files => {
+  for (const f of files) concatFiles.push(f);
+  renderConcatList();
+});
+
+function concatFilesSelected(input) {
+  for (const f of input.files) concatFiles.push(f);
+  renderConcatList();
+}
+
+function renderConcatList() {
+  const ul = document.getElementById('concat-list');
+  const zone = document.getElementById('concat-drop');
+  if (concatFiles.length > 0) { zone.classList.add('has-files'); zone.textContent = `已選擇 ${concatFiles.length} 個檔案（點擊可繼續新增）`; }
+  ul.innerHTML = '';
+  concatFiles.forEach((f, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <button class="move-btn" onclick="moveConcat(${i},-1)" title="上移">&#9650;</button>
+      <button class="move-btn" onclick="moveConcat(${i},1)" title="下移">&#9660;</button>
+      <span class="fname">${i + 1}. ${f.name}</span>
+      <button onclick="removeConcat(${i})" title="移除">&times;</button>`;
+    ul.appendChild(li);
+  });
+}
+
+function moveConcat(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= concatFiles.length) return;
+  [concatFiles[i], concatFiles[j]] = [concatFiles[j], concatFiles[i]];
+  renderConcatList();
+}
+
+function removeConcat(i) {
+  concatFiles.splice(i, 1);
+  renderConcatList();
+  if (concatFiles.length === 0) {
+    const zone = document.getElementById('concat-drop');
+    zone.classList.remove('has-files');
+    zone.textContent = '拖曳多個音樂檔案到此處，或點擊選擇檔案';
+  }
+}
+
+async function doConcat() {
+  if (concatFiles.length < 2) return alert('請至少選擇 2 個檔案');
+  const btn = document.getElementById('concat-btn');
+  const res = document.getElementById('concat-result');
+  btn.disabled = true;
+  res.style.display = 'block';
+  res.innerHTML = '<span class="spinner"></span> 合併中...';
+  const fd = new FormData();
+  concatFiles.forEach(f => fd.append('files', f));
+  try {
+    const r = await fetch('/api/concat', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (data.ok) {
+      res.innerHTML = `完成！ <a href="/api/download/${data.file}" download>下載 ${data.file}</a>
+        <audio controls src="/api/download/${data.file}"></audio>`;
+    } else {
+      res.innerHTML = `<span class="error">錯誤：${data.error}</span>`;
+    }
+  } catch (e) {
+    res.innerHTML = `<span class="error">錯誤：${e.message}</span>`;
+  }
+  btn.disabled = false;
+}
+</script>
+</body>
+</html>
